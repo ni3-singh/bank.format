@@ -8,7 +8,7 @@ import TransactionsTable from './components/TransactionsTable';
 import AnalyticsTable from './components/AnalyticsTable';
 import Footer from './components/Footer';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = import.meta.env.VITE_API_URL || 'https://backend-api-production-9746.up.railway.app';
 
 export default function App() {
   const [file, setFile] = useState(null);
