@@ -2,8 +2,17 @@
 
 > Parse any bank statement PDF → Instant insights. Zero data retention.
 
-![Privacy](https://img.shields.io/badge/Privacy-Zero%20Data%20Retention-green)
-![License](https://img.shields.io/badge/License-MIT-blue)
+[![Privacy](https://img.shields.io/badge/Privacy-Zero%20Data%20Retention-green)](https://github.com/ni3-singh/bank.format)
+[![License](https://img.shields.io/badge/License-MIT-blue)](https://github.com/ni3-singh/bank.format)
+[![Railway](https://img.shields.io/badge/Railway-Live%20Backend-0B0D0E?logo=railway)](https://backend-api-production-9746.up.railway.app)
+[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start/deploy?repository=https://github.com/ni3-singh/bank.format)
+
+## 🌐 Live URLs
+
+- **Backend API (Railway):** [`https://backend-api-production-9746.up.railway.app`](https://backend-api-production-9746.up.railway.app)
+  - Health check: [`https://backend-api-production-9746.up.railway.app/api/health`](https://backend-api-production-9746.up.railway.app/api/health)
+- **Frontend App (Netlify):** [`https://banklens-app.netlify.app`](https://banklens-app.netlify.app)
+- **GitHub Repository:** [`https://github.com/ni3-singh/bank.format`](https://github.com/ni3-singh/bank.format)
 
 ## 🚀 What is BankLens?
 
