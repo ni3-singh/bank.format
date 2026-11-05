@@ -1,0 +1,434 @@
+Act as Full STack Web developer 
+build a web app. The main problem is that whenever I receive any bank statement from any personal, it is in PDF. I have created Python code in my gogle codlab where I convert that PDF into an Excel file, and after that, I do data analysis of that Excel file. How do I do that? Let me explain to you a little bit in depth. I just take the whole bank statement.
+
+
+
+the python code i use in google colab - "import pdfplumber
+
+import pandas as pd
+
+
+
+pdf_file = "bank_statement.pdf"
+
+excel_file = "bank_statement.xlsx"
+
+csv_file = "bank_statement.csv"
+
+
+
+all_tables = []
+
+
+
+\# Open the PDF
+
+with pdfplumber.open(pdf_file) as pdf:
+
+    for page in pdf.pages:
+
+        # Extract tables from the page
+
+        tables = page.extract_tables()
+
+
+
+        for table in tables:
+
+            # table is a list of lists representing rows and columns
+
+            if table:
+
+                # Convert each table into a pandas DataFrame
+
+                df = pd.DataFrame(table)
+
+                all_tables.append(df)
+
+
+
+if all_tables:
+
+    # Combine all extracted tables across all pages into one DataFrame
+
+    final_df = pd.concat(all_tables, ignore_index=True)
+
+
+
+    # Export to Excel
+
+    final_df.to_excel(excel_file, index=False, header=False)
+
+
+
+    # Export to CSV
+
+    final_df.to_csv(csv_file, index=False, header=False)
+
+
+
+    print(f"Successfully saved to {excel_file} and {csv_file}")
+
+else:
+
+    print("No tables detected in the PDF.")import pdfplumber
+
+import pandas as pd
+
+
+
+pdf_file = "bank_statement.pdf"
+
+excel_file = "bank_statement.xlsx"
+
+csv_file = "bank_statement.csv"
+
+
+
+all_tables = []
+
+
+
+\# Open the PDF
+
+with pdfplumber.open(pdf_file) as pdf:
+
+    for page in pdf.pages:
+
+        # Extract tables from the page
+
+        tables = page.extract_tables()
+
+
+
+        for table in tables:
+
+            # table is a list of lists representing rows and columns
+
+            if table:
+
+                # Convert each table into a pandas DataFrame
+
+                df = pd.DataFrame(table)
+
+                all_tables.append(df)
+
+
+
+if all_tables:
+
+    # Combine all extracted tables across all pages into one DataFrame
+
+    final_df = pd.concat(all_tables, ignore_index=True)
+
+
+
+    # Export to Excel
+
+    final_df.to_excel(excel_file, index=False, header=False)
+
+
+
+    # Export to CSV
+
+    final_df.to_csv(csv_file, index=False, header=False)
+
+
+
+    print(f"Successfully saved to {excel_file} and {csv_file}")
+
+else:
+
+    print("No tables detected in the PDF.")import pdfplumber
+
+import pandas as pd
+
+
+
+pdf_file = "bank_statement.pdf"
+
+excel_file = "bank_statement.xlsx"
+
+csv_file = "bank_statement.csv"
+
+
+
+all_tables = []
+
+
+
+\# Open the PDF
+
+with pdfplumber.open(pdf_file) as pdf:
+
+    for page in pdf.pages:
+
+        # Extract tables from the page
+
+        tables = page.extract_tables()
+
+
+
+        for table in tables:
+
+            # table is a list of lists representing rows and columns
+
+            if table:
+
+                # Convert each table into a pandas DataFrame
+
+                df = pd.DataFrame(table)
+
+                all_tables.append(df)
+
+
+
+if all_tables:
+
+    # Combine all extracted tables across all pages into one DataFrame
+
+    final_df = pd.concat(all_tables, ignore_index=True)
+
+
+
+    # Export to Excel
+
+    final_df.to_excel(excel_file, index=False, header=False)
+
+
+
+    # Export to CSV
+
+    final_df.to_csv(csv_file, index=False, header=False)
+
+
+
+    print(f"Successfully saved to {excel_file} and {csv_file}")
+
+else:
+
+    print("No tables detected in the PDF.")import pdfplumber
+
+import pandas as pd
+
+
+
+pdf_file = "bank_statement.pdf"
+
+excel_file = "bank_statement.xlsx"
+
+csv_file = "bank_statement.csv"
+
+
+
+all_tables = []
+
+
+
+\# Open the PDF
+
+with pdfplumber.open(pdf_file) as pdf:
+
+    for page in pdf.pages:
+
+        # Extract tables from the page
+
+        tables = page.extract_tables()
+
+
+
+        for table in tables:
+
+            # table is a list of lists representing rows and columns
+
+            if table:
+
+                # Convert each table into a pandas DataFrame
+
+                df = pd.DataFrame(table)
+
+                all_tables.append(df)
+
+
+
+if all_tables:
+
+    # Combine all extracted tables across all pages into one DataFrame
+
+    final_df = pd.concat(all_tables, ignore_index=True)
+
+
+
+    # Export to Excel
+
+    final_df.to_excel(excel_file, index=False, header=False)
+
+
+
+    # Export to CSV
+
+    final_df.to_csv(csv_file, index=False, header=False)
+
+
+
+    print(f"Successfully saved to {excel_file} and {csv_file}")
+
+else:
+
+    print("No tables detected in the PDF.")import pdfplumber
+
+import pandas as pd
+
+
+
+pdf_file = "bank_statement.pdf"
+
+excel_file = "bank_statement.xlsx"
+
+csv_file = "bank_statement.csv"
+
+
+
+all_tables = []
+
+
+
+\# Open the PDF
+
+with pdfplumber.open(pdf_file) as pdf:
+
+    for page in pdf.pages:
+
+        # Extract tables from the page
+
+        tables = page.extract_tables()
+
+
+
+        for table in tables:
+
+            # table is a list of lists representing rows and columns
+
+            if table:
+
+                # Convert each table into a pandas DataFrame
+
+                df = pd.DataFrame(table)
+
+                all_tables.append(df)
+
+
+
+if all_tables:
+
+    # Combine all extracted tables across all pages into one DataFrame
+
+    final_df = pd.concat(all_tables, ignore_index=True)
+
+
+
+    # Export to Excel
+
+    final_df.to_excel(excel_file, index=False, header=False)
+
+
+
+    # Export to CSV
+
+    final_df.to_csv(csv_file, index=False, header=False)
+
+
+
+    print(f"Successfully saved to {excel_file} and {csv_file}")
+
+else:
+
+    print("No tables detected in the PDF.")"
+
+
+
+
+
+
+
+
+
+Formate 1 ( IDBI BANK STATEMENTFORMATE)
+
+Step 1 - Clean Discription using this formula - =IFERROR(TRIM(REGEXREPLACE(INDEX(SPLIT(D3, "/"), 3), CHAR(10), " ")), TRIM(CLEAN(D3))) - as i was using IDBI bank statemnet so it was working perfectly but diffrent bank has difrent formate but main idea is to get name of the person who is payig or receiving the amt.
+
+
+
+Descriptio = UPI/131957696956/Shree ganesh
+
+trade centre&#x20;
+
+Filtered Value is = Shree ganesh trade centre
+
+
+
+Step 2 = I use this formula "=QUERY(E2:E, "SELECT E, COUNT(E) WHERE E != '' GROUP BY E ORDER BY COUNT(E) DESC LABEL E 'Unique Name', COUNT(E) 'Frequency'", 0)"
+
+its list all names and its reapeating how many times.
+
+
+
+Step 3=  Use formula =SUMIF($E$3:$E,L5,$G$3:$G) to sum total amout associated with that name same thing do for CR also "=SUMIF($E$3:$E,L5,$H$3:$H)"
+
+
+
+
+
+
+
+Formate 2 \_ Kotak Bank Statement Formate&#x20;
+
+Kotak bank has description in this way - UPI/JYOTI KIRANA AN/122420711368/PAY BY WHATSAPP
+
+
+
+so i use this formula - =IFERROR(TRIM(REGEXREPLACE(INDEX(SPLIT(D227, "/"), 2), CHAR(10), " ")), TRIM(CLEAN(D227)))
+
+
+
+and Kotak Bank give DR and CR in same Column so i use formula "=IF(G19="DR",F19,0)"  and "=IF(G19="CR",F19,0)" to write them in Sprate Column.
+
+
+
+then convert both bank statement in this same formate.
+
+
+
+Date, Name, Dr, Cr, Remark
+
+
+
+and use this formula - =QUERY(E2:E, "SELECT E, COUNT(E) WHERE E != '' GROUP BY E ORDER BY COUNT(E) DESC LABEL E 'Unique Name', COUNT(E) 'Frequency'", 0)
+
+and then use this formula "=SUMIF($E$3:$E,L5,$G$3:$G)"
+
+for dr ( Debit and Credit Rspectively)
+
+
+
+
+
+i wanted to you do brainstormin understand all possibility as i have explain you two bank statement formate - diffrent bank can have diffrent formate.
+
+
+
+
+
+i wanted to create  a web app which can handle this all together and give results in this formate.
+
+
+
+
+
+Date, Name, Dr, Cr, Remark
+
+
+After Geting ready 
+Push al code on Github Repo.
+Host Front end on Netlify and Backend on Railway.
+dont create any daabase dont store any data - Show it in front end also to gain users trust that we are not retaining there data.
