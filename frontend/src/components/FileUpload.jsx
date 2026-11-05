@@ -21,8 +21,8 @@ export default function FileUpload({ onFileSelect, onAnalyze, file, loading, err
     if (!isPdf) {
       return 'Only PDF files are allowed.';
     }
-    if (f.size > 10 * 1024 * 1024) {
-      return 'File size must be less than 10 MB.';
+    if (f.size > 30 * 1024 * 1024) {
+      return 'File size must be less than 30 MB.';
     }
     return null;
   }, []);
@@ -101,7 +101,7 @@ export default function FileUpload({ onFileSelect, onAnalyze, file, loading, err
             <p className="text-lg text-slate-300">
               <span className="text-[#0d9488] font-medium">Drop your PDF</span> here or click to browse
             </p>
-            <p className="text-sm text-slate-500 mt-1">Bank statement PDF files only · Max 10 MB</p>
+            <p className="text-sm text-slate-500 mt-1">Bank statement PDF files · Max 30 MB</p>
           </div>
         )}
       </label>
@@ -114,16 +114,16 @@ export default function FileUpload({ onFileSelect, onAnalyze, file, loading, err
         </div>
       )}
 
-      {/* Analyze button */}
+      {/* Convert button */}
       <button
         onClick={onAnalyze}
         disabled={!file || loading}
         className={`
-          mt-6 w-full py-3.5 rounded-xl font-semibold text-lg transition-all duration-300
-          flex items-center justify-center gap-3
+          mt-6 w-full py-4 rounded-xl font-bold text-lg transition-all duration-300
+          flex items-center justify-center gap-3 shadow-lg
           ${!file || loading
             ? 'bg-[#334155] text-slate-500 cursor-not-allowed'
-            : 'bg-gradient-to-r from-[#1e3a5f] to-[#0d9488] text-white hover:shadow-lg hover:shadow-[#0d9488]/20 hover:scale-[1.01] active:scale-[0.99]'
+            : 'bg-gradient-to-r from-emerald-500 via-teal-600 to-[#1e3a5f] text-white hover:shadow-emerald-500/25 hover:scale-[1.01] active:scale-[0.99]'
           }
         `}
       >
@@ -133,12 +133,12 @@ export default function FileUpload({ onFileSelect, onAnalyze, file, loading, err
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
             </svg>
-            <span>Analyzing your statement…</span>
+            <span>Converting PDF to Excel & CSV…</span>
           </>
         ) : (
           <>
-            <span>🔍</span>
-            <span>Analyze Statement</span>
+            <span className="text-xl">⚡</span>
+            <span>Convert PDF to Excel & CSV</span>
           </>
         )}
       </button>

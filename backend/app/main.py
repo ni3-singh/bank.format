@@ -1,16 +1,18 @@
 """
-FastAPI application for Bank Statement PDF parsing and analysis.
+FastAPI application: PDF to Excel and CSV Converter for Bank Statements.
 """
 
+import io
 import re
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 import pandas as pd
+import pdfplumber
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from .analyzer import analyze_transactions
 from .bank_formats import (
@@ -25,12 +27,12 @@ from .pdf_parser import extract_tables_from_pdf
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-MAX_FILE_SIZE = 25 * 1024 * 1024  # 25 MB
+MAX_FILE_SIZE = 30 * 1024 * 1024  # 30 MB
 
 app = FastAPI(
-    title="Bank Statement Parser API",
-    description="Upload bank statement PDFs, extract transactions, and get analytics.",
-    version="2.1.0",
+    title="PDF to Excel & CSV Converter",
+    description="Convert bank statement PDFs into Excel (.xlsx) and CSV (.csv) files. Zero data retention.",
+    version="2.2.0",
 )
 
 # CORS – allow all origins for Netlify frontend
@@ -43,6 +45,68 @@ app.add_middleware(
 )
 
 
+def _col_letter(col_idx: int) -> str:
+    """Convert 0-based column index to Excel column letter (0->A, 25->Z, 26->AA)."""
+    result = ""
+    col_idx += 1
+    while col_idx > 0:
+        col_idx, remainder = divmod(col_idx - 1, 26)
+        result = chr(65 + remainder) + result
+    return result
+
+
+def _extract_tables_colab_style(pdf_bytes: bytes) -> tuple:
+    """
+    Extract all tables across pages using the exact approach from Google Colab.
+    Returns (final_df, page_count).
+    """
+    all_tables = []
+    page_count = 0
+
+    with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+        page_count = len(pdf.pages)
+        for page in pdf.pages:
+            tables = page.extract_tables()
+            if not tables:
+                # Text fallback for borderless PDFs
+                tables = page.extract_tables(table_settings={
+                    "vertical_strategy": "text",
+                    "horizontal_strategy": "text",
+                    "snap_tolerance": 5,
+                    "join_tolerance": 5,
+                })
+
+            for table in (tables or []):
+                if table:
+                    clean_table = [
+                        [("" if cell is None else str(cell).replace("\r", " ").replace("\n", " ").strip()) for cell in row]
+                        for row in table
+                        if any(c is not None and str(c).strip() != "" for c in row)
+                    ]
+                    if clean_table:
+                        df = pd.DataFrame(clean_table)
+                        all_tables.append(df)
+
+    if not all_tables:
+        raise ValueError("No table data could be detected in the PDF. Please check if the PDF is an image scan or password-protected.")
+
+    # Harmonize columns across tables
+    max_cols = max(df.shape[1] for df in all_tables)
+    aligned_dfs = []
+    for df in all_tables:
+        if df.shape[1] < max_cols:
+            for i in range(df.shape[1], max_cols):
+                df[i] = ""
+        elif df.shape[1] > max_cols:
+            df = df.iloc[:, :max_cols]
+        # Rename columns to standard 0..max_cols-1 integers
+        df.columns = list(range(max_cols))
+        aligned_dfs.append(df)
+
+    final_df = pd.concat(aligned_dfs, ignore_index=True)
+    return final_df, page_count
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -51,10 +115,13 @@ app.add_middleware(
 async def root():
     """API info."""
     return {
-        "app": "Bank Statement Parser API",
-        "version": "2.1.0",
+        "app": "PDF to Excel & CSV Converter",
+        "version": "2.2.0",
         "endpoints": {
-            "POST /api/parse": "Upload and parse a bank statement PDF",
+            "POST /api/convert": "Upload PDF, extract all tables, return preview + download data",
+            "POST /api/download/excel": "Upload PDF, get converted Excel (.xlsx) file directly",
+            "POST /api/download/csv": "Upload PDF, get converted CSV (.csv) file directly",
+            "POST /api/parse": "Upload PDF, get parsed transactions and bank analytics",
             "GET /api/health": "Health check",
         },
     }
@@ -66,16 +133,13 @@ async def health():
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
 
 
-@app.post("/api/parse")
-async def parse_statement(file: UploadFile = File(...)):
+@app.post("/api/convert")
+async def convert_pdf(file: UploadFile = File(...)):
     """
-    Parse a bank statement PDF.
-
-    Accepts a multipart PDF upload, extracts tables, detects the bank format,
-    cleans descriptions, normalises into (Date, Name, Dr, Cr, Remark),
-    and returns JSON with parsed transactions and analytics.
+    Convert bank statement PDF into Excel/CSV table data.
+    Runs the exact Google Colab extraction logic: extracts all tables,
+    concatenates into one DataFrame, and prepares both raw and cleaned data.
     """
-    # ---- Validate upload ----
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded.")
 
@@ -83,75 +147,113 @@ async def parse_statement(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
 
     contents = await file.read()
-
     if len(contents) > MAX_FILE_SIZE:
-        raise HTTPException(status_code=413, detail="File size exceeds 25 MB limit.")
-
+        raise HTTPException(status_code=413, detail="File size exceeds 30 MB limit.")
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail="Uploaded file is empty.")
 
-    # ---- Process ----
     try:
-        # Step 1: Extract raw tables
-        raw_df = extract_tables_from_pdf(contents)
+        final_df, page_count = _extract_tables_colab_style(contents)
 
-        if raw_df is None or raw_df.empty:
-            raise ValueError("No table data could be extracted from the PDF. The PDF may be scanned (image-only) or password protected.")
+        num_rows, num_cols = final_df.shape
+        excel_headers = [_col_letter(i) for i in range(num_cols)]
 
-        logger.info("Raw extracted rows: %d, cols: %d, columns: %s", len(raw_df), raw_df.shape[1], list(raw_df.columns))
+        # Raw rows for frontend table preview
+        rows = final_df.values.tolist()
 
-        # Step 2: Detect bank format
-        bank_format = detect_bank_format(raw_df)
-        logger.info("Detected bank format: %s", bank_format)
-
-        # Step 3: Normalise into (Date, Name, Dr, Cr, Remark)
-        normalized_df = _normalize_dataframe(raw_df, bank_format)
-
-        if normalized_df.empty:
-            raise ValueError("Could not extract any valid transactions. Please check if the statement contains tabular debit/credit entries.")
-
-        logger.info("Normalized transactions: %d", len(normalized_df))
-
-        # Step 4: Analyse
-        analytics = analyze_transactions(normalized_df)
-
-        # Step 5: Build response with both lowercase and uppercase keys for total frontend compatibility
-        transactions = []
-        for _, r in normalized_df.iterrows():
-            d_val = str(r["Date"]) if pd.notna(r["Date"]) else ""
-            n_val = str(r["Name"]) if pd.notna(r["Name"]) else "UNKNOWN"
-            dr_val = round(float(r["Dr"]), 2) if pd.notna(r["Dr"]) else 0.0
-            cr_val = round(float(r["Cr"]), 2) if pd.notna(r["Cr"]) else 0.0
-            rem_val = str(r["Remark"]) if pd.notna(r["Remark"]) else ""
-            transactions.append({
-                "date": d_val,
-                "name": n_val,
-                "dr": dr_val,
-                "cr": cr_val,
-                "remark": rem_val,
-                "Date": d_val,
-                "Name": n_val,
-                "Dr": dr_val,
-                "Cr": cr_val,
-                "Remark": rem_val,
-            })
+        # Optional: Try to run cleaned bank summary if format matches
+        cleaned_summary = None
+        try:
+            bank_format = detect_bank_format(final_df)
+            norm_df = _normalize_dataframe(final_df, bank_format)
+            if not norm_df.empty:
+                analytics = analyze_transactions(norm_df)
+                txs = []
+                for _, r in norm_df.iterrows():
+                    d_val = str(r["Date"]) if pd.notna(r["Date"]) else ""
+                    n_val = str(r["Name"]) if pd.notna(r["Name"]) else "UNKNOWN"
+                    dr_val = round(float(r["Dr"]), 2) if pd.notna(r["Dr"]) else 0.0
+                    cr_val = round(float(r["Cr"]), 2) if pd.notna(r["Cr"]) else 0.0
+                    rem_val = str(r["Remark"]) if pd.notna(r["Remark"]) else ""
+                    txs.append({
+                        "date": d_val, "name": n_val, "dr": dr_val, "cr": cr_val, "remark": rem_val,
+                        "Date": d_val, "Name": n_val, "Dr": dr_val, "Cr": cr_val, "Remark": rem_val,
+                    })
+                cleaned_summary = {
+                    "bank_detected": bank_format,
+                    "transactions": txs,
+                    "analytics": analytics,
+                }
+        except Exception as e:
+            logger.info("Bank summary could not be extracted (will show raw table): %s", str(e))
 
         return JSONResponse(content={
-            "transactions": transactions,
-            "analytics": analytics,
-            "bank_detected": bank_format,
-            "row_count": len(transactions),
+            "filename": file.filename,
+            "total_pages": page_count,
+            "total_rows": num_rows,
+            "total_cols": num_cols,
+            "headers": excel_headers,
+            "rows": rows[:1000],  # preview up to 1000 rows
+            "cleaned_summary": cleaned_summary,
+            # Backward-compatible fields
+            "transactions": cleaned_summary["transactions"] if cleaned_summary else [],
+            "analytics": cleaned_summary["analytics"] if cleaned_summary else None,
+            "bank_detected": cleaned_summary["bank_detected"] if cleaned_summary else "generic",
         })
 
     except ValueError as exc:
-        logger.warning("Validation error in parse_statement: %s", str(exc))
         raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
-        logger.exception("Unexpected error in parse_statement: %s", str(exc))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error processing PDF: {str(exc)}",
-        )
+        logger.exception("Error converting PDF: %s", str(exc))
+        raise HTTPException(status_code=500, detail=f"Error converting PDF: {str(exc)}")
+
+
+@app.post("/api/download/excel")
+async def download_excel_file(file: UploadFile = File(...)):
+    """Stream converted Excel file directly to browser."""
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+
+    contents = await file.read()
+    final_df, _ = _extract_tables_colab_style(contents)
+
+    excel_buf = io.BytesIO()
+    final_df.to_excel(excel_buf, index=False, header=False, engine="openpyxl")
+    excel_buf.seek(0)
+
+    base_name = file.filename.rsplit(".", 1)[0]
+    return StreamingResponse(
+        excel_buf,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{base_name}.xlsx"'},
+    )
+
+
+@app.post("/api/download/csv")
+async def download_csv_file(file: UploadFile = File(...)):
+    """Stream converted CSV file directly to browser."""
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted.")
+
+    contents = await file.read()
+    final_df, _ = _extract_tables_colab_style(contents)
+
+    csv_buf = io.StringIO()
+    final_df.to_csv(csv_buf, index=False, header=False)
+    csv_bytes = io.BytesIO(csv_buf.getvalue().encode("utf-8-sig"))
+
+    base_name = file.filename.rsplit(".", 1)[0]
+    return StreamingResponse(
+        csv_bytes,
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{base_name}.csv"'},
+    )
+
+
+@app.post("/api/parse")
+async def parse_statement(file: UploadFile = File(...)):
+    """Legacy endpoint redirecting to convert_pdf."""
+    return await convert_pdf(file)
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +266,12 @@ DATE_REGEX = re.compile(
 )
 
 
+def _is_date_cell(val) -> bool:
+    if not val:
+        return False
+    return bool(DATE_REGEX.search(str(val).strip()))
+
+
 def _is_amount_cell(val) -> bool:
     """Check if a cell value represents a monetary amount (excluding UTRs, dates, phone numbers)."""
     if val is None:
@@ -174,10 +282,8 @@ def _is_amount_cell(val) -> bool:
     if _is_date_cell(s):
         return False
     s_clean = re.sub(r"[₹$€£,\s]", "", s)
-    # Reject long integers (like 10-18 digit UTR/UPI transaction IDs or account numbers)
     if re.match(r"^\d{10,}$", s_clean):
         return False
-    # Accept standard decimal or integer amounts
     if re.match(r"^[-+]?\d{1,9}(\.\d{1,2})?$", s_clean):
         try:
             return float(s_clean) > 0
@@ -187,15 +293,7 @@ def _is_amount_cell(val) -> bool:
 
 
 def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame:
-    """
-    Map raw extracted columns to the canonical schema:
-        Date | Name | Dr | Cr | Remark
-
-    Combines:
-    1. Header keyword analysis
-    2. Deep content-based cell inspection (Dates, DR/CR markers, numeric amounts, text slashes)
-    3. Positional fallbacks for known bank formats (IDBI: D=Desc, G=Dr, H=Cr; Kotak: D=Desc, F=Amt, G=Dr/Cr)
-    """
+    """Map raw extracted columns to canonical schema: Date | Name | Dr | Cr | Remark."""
     df = raw_df.copy()
     if df.empty:
         return pd.DataFrame()
@@ -204,9 +302,7 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
     col_names = list(df.columns)
     col_names_lower = [str(c).strip().lower() for c in col_names]
 
-    # -------------------------------------------------------------
-    # Step 1: Detect Date Column
-    # -------------------------------------------------------------
+    # Date
     date_col = None
     date_kws = ["txn date", "trans date", "transaction date", "value date", "post date", "posting date", "date"]
     for kw in date_kws:
@@ -214,22 +310,16 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
             if kw in h:
                 date_col = col_names[i]
                 break
-        if date_col:
+        if date_col is not None:
             break
 
-    if not date_col:
-        # Detect by date frequency across column rows
-        date_counts = {}
-        for col in col_names:
-            cnt = sum(1 for val in df[col].dropna() if _is_date_cell(val))
-            date_counts[col] = cnt
+    if date_col is None:
+        date_counts = {col: sum(1 for val in df[col].dropna() if _is_date_cell(val)) for col in col_names}
         best_col, best_cnt = max(date_counts.items(), key=lambda x: x[1])
         if best_cnt > 0:
             date_col = best_col
 
-    # -------------------------------------------------------------
-    # Step 2: Detect Dr/Cr Indicator Column (Kotak style)
-    # -------------------------------------------------------------
+    # Indicator (Kotak)
     indicator_col = None
     indicator_kws = ["dr/cr", "dr / cr", "cr/dr", "txn type", "indicator", "dr_cr"]
     for kw in indicator_kws:
@@ -237,11 +327,10 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
             if kw in h or h == kw:
                 indicator_col = col_names[i]
                 break
-        if indicator_col:
+        if indicator_col is not None:
             break
 
-    if not indicator_col:
-        # Check by content: column where majority of entries are DR / CR
+    if indicator_col is None:
         for col in col_names:
             if col == date_col:
                 continue
@@ -253,9 +342,7 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
                 indicator_col = col
                 break
 
-    # -------------------------------------------------------------
-    # Step 3: Detect Description Column
-    # -------------------------------------------------------------
+    # Description
     desc_col = None
     desc_kws = ["description", "narration", "particulars", "details", "remark", "remarks", "transaction details"]
     for kw in desc_kws:
@@ -263,11 +350,10 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
             if kw in h:
                 desc_col = col_names[i]
                 break
-        if desc_col:
+        if desc_col is not None:
             break
 
-    if not desc_col:
-        # Score columns by text length, presence of slashes / hyphens, and transaction keywords
+    if desc_col is None:
         scores = {}
         for col in col_names:
             if col in (date_col, indicator_col):
@@ -278,37 +364,31 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
             avg_len = sum(len(v) for v in str_vals) / len(str_vals)
             slash_cnt = sum(v.count("/") for v in str_vals)
             hyphen_cnt = sum(v.count("-") for v in str_vals)
-            score = avg_len + (slash_cnt * 6) + (hyphen_cnt * 2)
-            scores[col] = score
+            scores[col] = avg_len + (slash_cnt * 6) + (hyphen_cnt * 2)
         if scores:
             desc_col = max(scores.items(), key=lambda x: x[1])[0]
 
-    # -------------------------------------------------------------
-    # Step 4: Detect Amount Columns (Debit, Credit, or Single Amount)
-    # -------------------------------------------------------------
+    # Amounts
     dr_col = None
     cr_col = None
     amount_col = None
 
-    if indicator_col:
+    if indicator_col is not None:
         bank_format = "kotak"
-        # Look for amount column in header
         amt_kws = ["amount", "txn amount", "transaction amount", "amt"]
         for kw in amt_kws:
             for i, h in enumerate(col_names_lower):
                 if kw in h and col_names[i] not in (date_col, desc_col, indicator_col):
                     amount_col = col_names[i]
                     break
-            if amount_col:
+            if amount_col is not None:
                 break
 
-        if not amount_col:
-            num_counts = {}
-            for col in col_names:
-                if col in (date_col, desc_col, indicator_col):
-                    continue
-                cnt = sum(1 for v in df[col].dropna() if _is_amount_cell(v))
-                num_counts[col] = cnt
+        if amount_col is None:
+            num_counts = {
+                col: sum(1 for v in df[col].dropna() if _is_amount_cell(v))
+                for col in col_names if col not in (date_col, desc_col, indicator_col)
+            }
             if num_counts:
                 amount_col = max(num_counts.items(), key=lambda x: x[1])[0]
     else:
@@ -320,7 +400,7 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
                 if kw in h and col_names[i] not in (date_col, desc_col):
                     dr_col = col_names[i]
                     break
-            if dr_col:
+            if dr_col is not None:
                 break
 
         for kw in cr_kws:
@@ -328,51 +408,39 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
                 if kw in h and col_names[i] not in (date_col, desc_col, dr_col):
                     cr_col = col_names[i]
                     break
-            if cr_col:
+            if cr_col is not None:
                 break
 
-        # If headers did not match, detect numeric columns by content
-        if not dr_col or not cr_col:
-            numeric_cols = []
-            for col in col_names:
-                if col in (date_col, desc_col, indicator_col):
-                    continue
-                cnt = sum(1 for v in df[col].dropna() if _is_amount_cell(v))
-                if cnt >= max(1, len(df) * 0.05):
-                    numeric_cols.append(col)
-
+        if dr_col is None or cr_col is None:
+            numeric_cols = [
+                col for col in col_names
+                if col not in (date_col, desc_col, indicator_col)
+                and sum(1 for v in df[col].dropna() if _is_amount_cell(v)) >= max(1, len(df) * 0.05)
+            ]
             if len(numeric_cols) >= 2:
-                # Debit/Withdrawal comes first, Credit/Deposit comes second
                 dr_col = numeric_cols[0]
                 cr_col = numeric_cols[1]
             elif len(numeric_cols) == 1:
                 amount_col = numeric_cols[0]
 
-    # Positional heuristics fallback (e.g. user's Colab output)
-    if not desc_col and len(col_names) > 3:
+    # Positional heuristics fallback
+    if desc_col is None and len(col_names) > 3:
         desc_col = col_names[3]
-    if not dr_col and not amount_col:
+    if dr_col is None and amount_col is None:
         if len(col_names) > 7:
             dr_col = col_names[6]
             cr_col = col_names[7]
         elif len(col_names) > 5:
             amount_col = col_names[5]
 
-    logger.info("Mapped columns: date=%s, desc=%s, dr=%s, cr=%s, indicator=%s, amount=%s",
-                date_col, desc_col, dr_col, cr_col, indicator_col, amount_col)
-
-    # -------------------------------------------------------------
-    # Step 5: Normalize Rows
-    # -------------------------------------------------------------
+    # Normalize Rows
     records = []
     for _, row in df.iterrows():
-        raw_date = str(row.get(date_col, "")).strip() if date_col else ""
+        raw_date = str(row.get(date_col, "")).strip() if date_col is not None else ""
         parsed_date = _parse_date(raw_date)
+        raw_desc = str(row.get(desc_col, "")).strip() if desc_col is not None else ""
 
-        raw_desc = str(row.get(desc_col, "")).strip() if desc_col else ""
-
-        # Amounts
-        if indicator_col and amount_col:
+        if indicator_col is not None and amount_col is not None:
             amt = _parse_amount_safe(row.get(amount_col))
             ind = str(row.get(indicator_col, "")).strip().upper()
             if "DR" in ind or ind == "D":
@@ -381,20 +449,18 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
                 dr_val, cr_val = 0.0, amt
             else:
                 dr_val, cr_val = amt, 0.0
-        elif dr_col or cr_col:
-            dr_val = _parse_amount_safe(row.get(dr_col)) if dr_col else 0.0
-            cr_val = _parse_amount_safe(row.get(cr_col)) if cr_col else 0.0
-        elif amount_col:
+        elif dr_col is not None or cr_col is not None:
+            dr_val = _parse_amount_safe(row.get(dr_col)) if dr_col is not None else 0.0
+            cr_val = _parse_amount_safe(row.get(cr_col)) if cr_col is not None else 0.0
+        elif amount_col is not None:
             amt = _parse_amount_safe(row.get(amount_col))
             dr_val, cr_val = amt, 0.0
         else:
             dr_val, cr_val = 0.0, 0.0
 
-        # Skip rows where Dr, Cr, and parsed_date are all missing
         if dr_val == 0.0 and cr_val == 0.0 and not parsed_date:
             continue
 
-        # Skip summary / banner rows
         row_str = " ".join(str(v) for v in row.values).lower()
         if any(term in row_str for term in [
             "opening balance", "closing balance", "total", "page total",
@@ -404,7 +470,6 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
             if dr_val == 0.0 and cr_val == 0.0:
                 continue
 
-        # Clean name from description
         name = clean_description(raw_desc, bank_format)
 
         records.append({
@@ -419,19 +484,15 @@ def _normalize_dataframe(raw_df: pd.DataFrame, bank_format: str) -> pd.DataFrame
 
 
 def _parse_amount_safe(value) -> float:
-    """Parse amount, returning 0.0 on failure."""
     if value is None:
         return 0.0
     s = str(value).strip()
     if not s or s.lower() in ("", "nan", "none", "null", "-", "--", "nil"):
         return 0.0
     s = re.sub(r"[₹$€£,\s]", "", s)
-
-    # Handle parenthetical negatives: (1234.56) -> 1234.56
     match_paren = re.match(r"^\(([0-9.]+)\)$", s)
     if match_paren:
         return abs(float(match_paren.group(1)))
-
     match = re.search(r"[-+]?\d*\.?\d+", s)
     if match:
         try:
@@ -442,48 +503,28 @@ def _parse_amount_safe(value) -> float:
 
 
 def _parse_date(raw: str) -> str:
-    """Parse various date formats into DD-MM-YYYY."""
     if not raw or raw.lower() in ("nan", "none", "null", "", "-"):
         return ""
-
     raw = raw.strip()
     raw = re.sub(r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+", "", raw, flags=re.IGNORECASE)
-
-    # Extract matching date substring if wrapped with time or text
     m = DATE_REGEX.search(raw)
     if m:
         raw = m.group(1).strip()
-
     formats = [
-        "%d/%m/%Y",
-        "%d-%m-%Y",
-        "%d %b %Y",
-        "%d-%b-%Y",
-        "%d/%b/%Y",
-        "%Y-%m-%d",
-        "%d/%m/%y",
-        "%d-%m-%y",
-        "%d %b %y",
-        "%d-%b-%y",
-        "%m/%d/%Y",
-        "%Y/%m/%d",
-        "%d.%m.%Y",
-        "%d.%m.%y",
-        "%d %B %Y",
+        "%d/%m/%Y", "%d-%m-%Y", "%d %b %Y", "%d-%b-%Y", "%d/%b/%Y",
+        "%Y-%m-%d", "%d/%m/%y", "%d-%m-%y", "%d %b %y", "%d-%b-%y",
+        "%m/%d/%Y", "%Y/%m/%d", "%d.%m.%Y", "%d.%m.%y", "%d %B %Y",
     ]
-
     for fmt in formats:
         try:
             dt = datetime.strptime(raw, fmt)
             return dt.strftime("%d-%m-%Y")
         except ValueError:
             continue
-
     try:
         dt = pd.to_datetime(raw, dayfirst=True)
         if pd.notna(dt):
             return dt.strftime("%d-%m-%Y")
     except Exception:
         pass
-
     return raw

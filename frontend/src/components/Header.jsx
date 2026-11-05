@@ -11,22 +11,22 @@ export default function Header() {
       <div className="relative z-10 max-w-3xl mx-auto">
         {/* Logo */}
         <div className="flex items-center justify-center gap-3 mb-4">
-          <div className="text-5xl">🏦</div>
-          <h1 className="text-5xl md:text-6xl font-extrabold bg-gradient-to-r from-[#60a5fa] via-[#0d9488] to-[#34d399] bg-clip-text text-transparent">
-            BankLens
+          <div className="text-5xl">📄</div>
+          <h1 className="text-4xl md:text-5xl font-extrabold bg-gradient-to-r from-emerald-400 via-teal-300 to-[#60a5fa] bg-clip-text text-transparent">
+            PDF to Excel & CSV
           </h1>
-          <div className="text-5xl">🔍</div>
+          <div className="text-5xl">📊</div>
         </div>
 
         {/* Tagline */}
         <p className="text-lg md:text-xl text-slate-300 mb-6 font-light">
-          Parse any bank statement PDF → <span className="text-[#0d9488] font-medium">Instant insights</span>
+          Convert any Bank Statement PDF into clean <span className="text-emerald-400 font-medium">Excel (.xlsx)</span> and <span className="text-teal-400 font-medium">CSV</span> files
         </p>
 
         {/* Privacy badge */}
-        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1e293b]/80 border border-[#334155] text-sm text-slate-300">
+        <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#1e293b]/80 border border-emerald-500/30 text-sm text-slate-300 shadow-md">
           <span>🔒</span>
-          <span>Zero Data Retention — Your data never leaves your browser session</span>
+          <span>Zero Data Retention — 100% In-Memory Processing, Nothing is Saved</span>
         </div>
       </div>
     </header>
